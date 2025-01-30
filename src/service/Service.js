@@ -16,3 +16,12 @@ import { httpClient } from "../config/Axioshelper"
       throw new Error(`Failed to join the room: ${error.message}`);
     }
   };
+
+export const getmessages = async (roomName,size=50,page=0)=>{
+  try {
+    const response = await httpClient.get(`/rooms/${roomName}/messages?size=${size}&pages=${page}`);
+    return response.data// Return the room ID if the request is successful
+  } catch (error) {
+    throw new Error(`Failed to join the room: ${error.message}`);
+  }
+}

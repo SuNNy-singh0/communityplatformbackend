@@ -15,7 +15,7 @@ function App() {
           <Route path='' element={<Createroom />} />
          
           {/* Route to chat page */}
-          <Route path='/chat/:username' element={<ChatPage />} />
+          <Route path='/chat/:username/:userid' element={<ChatPage />} />
         </Routes>
       </BrowserRouter>
     </>

@@ -4,69 +4,74 @@ import { LuSendHorizontal } from 'react-icons/lu';
 import { MdOutlineAttachment } from 'react-icons/md';
 import { useParams } from 'react-router-dom';
 import { baseurL } from '../config/Axioshelper';
-import { Client } from '@stomp/stompjs';  // Correct import for Stomp Client in v7.x.x
+import { Client, Stomp } from '@stomp/stompjs';  // Correct import for Stomp Client in v7.x.x
 import SockJS from 'sockjs-client';
+import { getmessages } from '../service/Service';
 
 function ChatPage() {
   const baseurl = baseurL;
-  const [messages, setMessages] = useState([
-    {
-      content: 'hello',
-      sender: 'Nikita',
-    },
-    {
-      content: 'hi, how are you',
-      sender: 'Sunny',
-    },
-    {
-      content: 'I am fine',
-      sender: 'Nikita',
-    },
-  ]);
+  const [messages, setMessages] = useState([]);
   const { username } = useParams();
+  const { userid } = useParams();
   const [input, setInput] = useState('');
   const inputRef = useRef(null);
   const [stompClient, setStompClient] = useState(null);
   const [roomId, setRoomId] = useState(username); // Set roomId from username
-  const [user, setUser] = useState('Sunny');
+  const [user, setUser] = useState(userid);
 
-  // Establish WebSocket connection
+  // Establish WebSocket connection once and handle cleanup
   useEffect(() => {
+    if (stompClient) return; // Prevent re-creating WebSocket connection if already established
+
     const connectWebSocket = () => {
-      const socket = new SockJS(`${baseurl}/chat`);  // Create SockJS connection
+      const sock = new SockJS(`${baseurl}/chat`);
+      const client = Stomp.over(sock);
 
-      const client = new Client({
-        brokerURL: `${baseurl}/chat`,  // Adjust the WebSocket endpoint if necessary
-        connectHeaders: {},  // Optional headers if needed
-        debug: (str) => console.log(str),  // Debugging log
-        reconnectDelay: 5000,  // Automatically reconnect after 5 seconds
-        onConnect: () => {
-          console.log('Connected to WebSocket');
-          setStompClient(client);
+      client.connect({}, () => {
+        console.log("WebSocket connected");
 
-          // Subscribe to the chat room topic
-          client.subscribe(`/topic/room/${roomId}`, (message) => {
-            const newMessage = JSON.parse(message.body);
-            setMessages((prevMessages) => [...prevMessages, newMessage]);
-          });
-        },
-        onStompError: (frame) => {
-          console.error('STOMP error:', frame);
-        },
+        // Subscribe to the room's topic
+        client.subscribe(`/topic/room/${roomId}`, (message) => {
+          // Log received message for debugging
+          console.log("Received message:", message.body);
+
+          // Parse and update the messages state with the incoming message
+          const newMessage = JSON.parse(message.body);
+
+          // Update the message list with the new message
+          setMessages((prevMessages) => [...prevMessages, newMessage]);
+        });
       });
 
-      client.activate();  // Activate the connection
+      setStompClient(client); // Set the stompClient state after establishing connection
     };
 
     connectWebSocket();
 
-    // Cleanup function
+    // Cleanup function to deactivate the WebSocket when the component is unmounted
     return () => {
       if (stompClient) {
         stompClient.deactivate();  // Deactivate WebSocket connection on cleanup
       }
     };
-  }, [baseurl, roomId, stompClient]);
+  }, [roomId,stompClient]);  // Only run this effect when the roomId changes
+
+  // Load existing messages when roomId changes
+  useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        const response = await getmessages(roomId);  // Fetch messages for the current room
+        if (Array.isArray(response)) {
+          setMessages(response);  // Set the fetched messages if they are in an array
+        } else {
+          console.error("Fetched messages are not an array:", response);
+        }
+      } catch (error) {
+        console.error("Error loading messages:", error);
+      }
+    };
+    loadMessages();  // Fetch messages when the roomId changes
+  }, [roomId]);
 
   // Handle sending a message
   const handleSendMessage = () => {
@@ -74,12 +79,13 @@ function ChatPage() {
       const newMessage = {
         content: input,
         sender: user,
+        roomid: roomId
       };
 
       // Send the message to the WebSocket server
-      stompClient.send(`/app/room/${roomId}`, {}, JSON.stringify(newMessage));
+      stompClient.send(`/app/sendmessage/${roomId}/websocket`, {}, JSON.stringify(newMessage));
 
-      // Add the message to local state for instant update
+      // Add the message to local state for instant update (without waiting for server response)
       setMessages((prevMessages) => [...prevMessages, newMessage]);
 
       setInput(''); // Clear the input field
@@ -88,79 +94,73 @@ function ChatPage() {
   };
 
   return (
-    <>
-      <div>
-        {/* part1 */}
-        <div id="chatpagepart1">
-          <div>
-            <h3>
-              Room id: <span>{username}</span>
-            </h3>
-          </div>
-          <div>
-            <h3>
-              User: <span>{user}</span>
-            </h3>
-          </div>
-          <div>
-            <button className="btn btn-danger">Leave Room</button>
-          </div>
+    <div>
+      {/* Part 1 - Room and User Info */}
+      <div id="chatpagepart1">
+        <div>
+          <h3>
+            Room id: <span>{username}</span>
+          </h3>
         </div>
-
-        <div className="centerchatpart">
-          {messages.map((message, index) => (
-            <div
-              key={index}
-              className="messagecontainer"
-              style={{
-                justifyContent: message.sender === user ? 'flex-end' : 'flex-start',
-              }}
-            >
-              <div id="single-message">
-                <img
-                  src="https://avatar.iran.liara.run/public"
-                  id="avatar"
-                  alt="avatar"
-                />
-                <div>
-                  <p className="sender">{message.sender}</p>
-                  <p className="content">{message.content}</p>
-                </div>
-              </div>
-            </div>
-          ))}
+        <div>
+          <h3>
+            User: <span>{user}</span>
+          </h3>
         </div>
-
-        <div
-          id="chatpagepart1"
-          className="lastbox"
-          style={{
-            marginTop: '10vh',
-          }}
-        >
-          <div style={{ flexBasis: '90%', textAlign: 'center' }}>
-            <input
-              ref={inputRef}
-              type="text"
-              className="form-control lastinput"
-              placeholder="Type Your Message"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-            />
-          </div>
-          <div>
-            <h3 id="attach">
-              <MdOutlineAttachment />
-            </h3>
-          </div>
-          <div>
-            <button className="btn btn-warning" onClick={handleSendMessage}>
-              <LuSendHorizontal />
-            </button>
-          </div>
+        <div>
+          <button className="btn btn-danger">Leave Room</button>
         </div>
       </div>
-    </>
+
+      {/* Part 2 - Chat Messages */}
+      <div className="centerchatpart">
+        {messages.map((message, index) => (
+          <div
+            key={index}
+            className="messagecontainer"
+            style={{
+              justifyContent: message.sender === user ? 'flex-end' : 'flex-start',
+            }}
+          >
+            <div id="single-message">
+              <img
+                src="https://avatar.iran.liara.run/public"
+                id="avatar"
+                alt="avatar"
+              />
+              <div>
+                <p className="sender">{message.sender}</p>
+                <p className="content">{message.content}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Part 3 - Message Input */}
+      <div id="chatpagepart1" className="lastbox" style={{ marginTop: '10vh' }}>
+        <div style={{ flexBasis: '90%', textAlign: 'center' }}>
+          <input
+            ref={inputRef}
+            type="text"
+            className="form-control lastinput"
+            placeholder="Type Your Message"
+            onChange={(e) => setInput(e.target.value)} // Updates input state
+            value={input}
+          />
+        </div>
+        <div>
+          <h3 id="attach">
+            <MdOutlineAttachment />
+          </h3>
+        </div>
+        <div>
+          <button className="btn btn-warning" onClick={handleSendMessage}>
+            <LuSendHorizontal />
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 

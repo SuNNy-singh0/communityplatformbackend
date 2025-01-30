@@ -41,7 +41,7 @@ function Createroom() {
     e.preventDefault();
     try{
      const response =  await joinroomapi(roomName);
-     navigate(`/chat/${response.data.roomId}`)
+     navigate(`/chat/${response.data.roomId}/${roomId}`)
      console.log(response)
     }
     catch{
@@ -73,7 +73,7 @@ function Createroom() {
                 id="roomId"
                 value={roomId}
                 onChange={handleRoomIdChange}
-                placeholder="Enter Room ID"
+                placeholder="Enter your name"
               />
             </div>
             <div className="mb-3 form-check">
